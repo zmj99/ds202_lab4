@@ -1,0 +1,180 @@
+---
+title: "team"
+author: "Zack Johnson"
+date: "10/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 1
+```{r}
+library(readxl)
+library(tidyverse)
+library(plyr)
+library(patchwork)
+
+heights <- c("5-10", "5-11", "5-8", "5-9",  "6-0",  "6-1",  "6-2",  "6-3",  "6-4",  "6-5",  "6-6",  "6-7","6-8","6-9")
+inches <- as.numeric(c(70,71,68,69,72,73,74,75,76,77,78,79,80,81))
+
+#defense
+defense <- read_excel('~/ds202/lab4/cyclonesFootball2019.xlsx', sheet='Defensive')
+defense$Name <- as.factor(defense$Name)
+defense$Opponent_Opponent <- as.factor(defense$Opponent_Opponent)
+defense <- defense %>%
+  mutate(across(where(is.character), as.numeric))
+str(defense)
+
+#offense
+offense <- read_excel('~/ds202/lab4/cyclonesFootball2019.xlsx', sheet='Offensive')
+offense$Name <- as.factor(offense$Name)
+offense$Opponent_Opponent <- as.factor(offense$Opponent_Opponent)
+offClean <- offense %>%
+  mutate(across(where(is.character), as.numeric))
+str(offClean)
+
+#biography
+biography <- read_excel('~/ds202/lab4/cyclonesFootball2019.xlsx', sheet='Biography')
+biography$Name <- as.factor(biography$Name)
+biography$Height <- mapvalues(biography$Height, from = heights, to = inches)
+biography$Height <- as.numeric(biography$Height)
+bioClean <- biography %>% mutate(Weight = as.numeric(biography$Weight))
+str(bioClean)
+```
+
+## Part 2
+### Exerices 1-3
+```{r}
+defClean <- pivot_longer(data = defense, cols = Tackles_Solo:Pass_PB, names_to = "stat")
+
+
+ggplot(data = defClean, aes(as.numeric(value))) + geom_bar() + facet_grid(~stat) + xlim(0,7) + ylim(0,110)
+
+
+defCleanByGame <- defClean %>% 
+  filter(stat=='Tackles_Solo', Opponent_Opponent %in% c('Notre Dame', 'Iowa')) %>%
+  pivot_wider(names_from = Opponent_Opponent, values_from = value)
+ggplot(data = defCleanByGame, aes(x=Iowa, y=`Notre Dame`)) + geom_jitter()
+``` 
+
+Anything associated with turnovers is seemingly pretty rare. Pass_PB, Pass_QBH, and Tackles_Sacks are sort of a second group that seems relatively rare. Finally we see that tackling stats are pretty common and not rare.
+
+This method of plotting for the relationship between the solo tackling numbers of the games shows that there were more high tacklers in the Iowa game.
+
+### Exercise 4/5
+```{r}
+rm(plyr)
+bioClean <- bioClean %>% separate(Hometown, c("City", "State"), sep = ",")
+
+playersPerState <- bioClean %>%
+  group_by(State) %>%
+  dplyr::summarise(players_per_state = n())
+ggplot(data = playersPerState, aes(y = players_per_state, x = as.factor(State))) + geom_bar(stat = "identity") + labs(title = "Iowa State Players by Home State/Country", x = "State/Country", y = "Count") + theme(axis.ticks.y = element_line(size = 5))
+```
+
+## Part 3
+
+### Exercise 1
+```{r}
+offClean <- pivot_longer(offClean, cols = `Rushing_ATT`:`Passing_INT`, names_to = "stat")
+
+left_join(offClean, bioClean, by='Name') %>%
+  group_by(Name, State) %>%
+  dplyr::summarise()
+
+left_join(defClean, bioClean, by='Name') %>%
+  group_by(Name, State) %>%
+  dplyr::summarise()
+```
+
+### Exericise 2
+```{r}
+brock_stat <- offClean %>%
+  filter(Name == "Purdy, Brock") %>%
+  pivot_wider(names_from = stat, values_from = value) %>%
+  mutate(Result = ifelse(Opponent_Opponent %in% c("UNI", "ULM", "TCU", "West Virginia", "Texas
+                                                  Tech", "Texas", "Kansas"), 1, 0)) %>%
+  select(-Name, -Opponent_Opponent, -Receiving_REC, -Receiving_YDS, -Receiving_TD) %>%
+  separate(col = `Passing_CMP-ATT`, c("CMP", "ATT"), sep = "-") %>%
+  dplyr::mutate(across(where(is.character), as.numeric)) %>%
+  mutate(CMP_pct = CMP / ATT, Total_Pass = ATT, YDS_per_rush = Rushing_YDS/Rushing_ATT, YDS_per_ATT = Passing_YDS / ATT) %>%
+  select(-CMP, -ATT, -Rushing_YDS, -Rushing_ATT)
+  
+str(brock_stat)
+
+brock.binom1 <- glm(data = brock_stat, formula = Result ~  Passing_YDS + Passing_TD, family = "binomial")
+summary(brock.binom1)
+
+brock.binom2 <- glm(data = brock_stat, formula = Result ~ CMP_pct + YDS_per_ATT, family = "binomial")
+summary(brock.binom2)
+
+brock.binom3 <- glm(data = brock_stat, formula = Result ~ Passing_INT)
+summary(brock.binom3)
+
+brock.binom.full <- glm(data = brock_stat, formula = Result ~ Rushing_TD + Rushing_TD + Passing_YDS + Passing_TD + Passing_INT + CMP_pct  + YDS_per_rush + YDS_per_ATT)
+summary(brock.binom.full)
+```
+
+It is not overly clear to me, based on these models of Brock Purdy's performance as a function of whether the team won or not, whether the team's success is significantly impacted by his performance alone. These models of course do not tell the nature of the plays in the game precisely but if we were to use this data, we would think there would be other far more significant phenomena effecting the team's success.
+
+### Exercise 3
+```{r}
+defense2018 <- read_excel('./cyclonesFootball2018.xlsx', sheet='Defensive')
+offense2018 <- read_excel('./cyclonesFootball2018.xlsx', sheet='Offensive')
+
+offense2018$Name <- as.factor(offense2018$Name)
+offense2018$Opponent_Opponent <- as.factor(offense2018$Opponent_Opponent)
+defense2018$Name <- as.factor(defense2018$Name)
+defense2018$Opponent_Opponent <- as.factor(defense2018$Opponent_Opponent)
+offense2018 <- offense2018 %>% 
+  mutate(across(where(is.character), as.numeric))
+defense2018 <- defense2018 %>% 
+  mutate(across(where(is.character), as.numeric))
+offClean2018 <- pivot_longer(offense2018, cols = `Receiving_REC`:`Passing_INT`, names_to = "stat")
+defClean2018 <- defClean <- pivot_longer(data = defense2018, cols = Tackles_Solo:Pass_PB, names_to = "stat")
+curr_team_name <- c("Baylor","Iowa","Kansas","Kansas State","Notre Dame","Oklahoma","Oklahoma State","TCU","Texas","Texas Tech","ULM","UNI","West Virginia")
+
+offClean$Opponent_Opponent <- mapvalues(x = offClean$Opponent_Opponent, from =  curr_team_name, to = paste0(curr_team_name,"_2019"))
+
+length(levels(offClean$Opponent_Opponent)) + length(levels(offClean2018$Opponent_Opponent)) ==
+length(levels(twoYearOff$Opponent_Opponent)) #TRUE
+
+twoYearOff <- rbind(offClean, offClean2018) %>%
+  pivot_wider(names_from = stat, values_from = value)
+
+twoYearPlayersOff <- offClean$Name[offClean$Name %in% offClean2018$Name]
+
+twoYearOff <- twoYearOff[twoYearOff$Name %in% twoYearPlayersOff,]
+levels(twoYearOff$Opponent_Opponent)
+
+twoYearOff$Opponent_Opponent <- factor(twoYearOff$Opponent_Opponent, levels = 
+                                         c("Iowa","Oklahoma","Akron","TCU","Oklahoma State","West Virginia","Texas Tech","Kansas","Baylor","Texas","Kansas State","Drake","Washington State","UNI_2019","Iowa_2019","ULM_2019","Baylor_2019","TCU_2019","West Virginia_2019","Texas Tech_2019","Oklahoma State_2019","Oklahoma_2019","Texas_2019","Kansas_2019","Kansas State_2019","Notre Dame_2019"))
+twoYearOff <- twoYearOff %>%
+  separate(col = `Passing_CMP-ATT`, c("CMP", "ATT"), sep = "-") %>%
+  dplyr::mutate(across(where(is.character), as.numeric)) %>%
+  mutate(CMP_pct = CMP/ATT)
+
+qb <- "Purdy, Brock"
+wr <- c("Akers, Landen", "Allen, Chase", "Jones, Deshaunte", "Kolar, Charlie", "Milton, Tarique")
+rb <- c("Nwangwu, Kene", 	"Lang, Johnnie")
+
+ggplot(data = twoYearOff[twoYearOff$Name %in% rb,], aes(y = Rushing_YDS, x = Opponent_Opponent, color = Name, group = 2)) + geom_line() + facet_grid(~Name) + theme(axis.text.x = element_text(angle = 90))
+
+ggplot(data = twoYearOff[twoYearOff$Name %in% wr,], aes(y = Receiving_YDS, x = Opponent_Opponent, color = Name, group = 5)) + geom_line() + facet_grid(~Name) + theme(axis.text.x = element_text(angle = 90, size = 3))
+
+ggplot(data = twoYearOff[twoYearOff$Name %in% qb,], aes(y = Passing_YDS, x = Opponent_Opponent, color = Name, group = 1)) + geom_line() + theme(axis.text.x = element_text(angle = 90))
+
+
+```
+
+Brock Purdy's passing yards in games starts great and continues to be consistent. There are a few low spots towards the end of the 2018 campaign and he only improves in 2019 from the look at this pretty rudenmentary graphic (a cool time series regression could be neat here). The two running backs we have here are pretty low contributors but Jonnie Lang had some breakout performances in 2019. Charlie Kolar, Deshaunte Jones, and Tarique Milton all had great improvements over time while Chase Allen and Landen Akers stayed pretty stagnent (though they are both doing quite well this year).
+
+
+
+
+
+
+
+
